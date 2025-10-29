@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metro Route Planner - Distance vs. Changes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* ----------------- Theme Variables (Light Mode) ----------------- */
+  :root {
+    --bg-color: #f3f4f6; /* Light Gray Background */
+    --card-bg: #ffffff; /* Pure White Card Background */
+    --text-color: #1f2937; /* Dark Text (High Contrast) */
+    --accent-color: #10b981; /* Emerald Green for main action/distance */
+    --warning-color: #f97316; /* Orange/Amber for changes */
+    --label-color: #6b7280; /* Medium Gray Label Text */
+    --input-bg: #ffffff; 
+    --shadow-strong: 0 10px 30px rgba(0, 0, 0, 0.1); 
+    --shadow-light: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 10px;
+    min-height: 100vh;
+  }
+
+  /* Global Tailwind Overrides for Custom Components */
+  .route-card {
+    background: var(--card-bg);
+    border: 1px solid #e5e7eb; /* Light border */
+    border-radius: 12px;
+    box-shadow: var(--shadow-light);
+    transition: all 0.3s ease;
+  }
+
+  /* Input Styling */
+  input {
+    background: var(--input-bg);
+    border: 1px solid #d1d5db;
+    color: var(--text-color);
+    transition: border-color 0.3s;
+  }
+  input:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3);
+  }
+
+  /* Button Styling */
+  .btn-primary {
+    background: var(--accent-color);
+    color: var(--card-bg); /* White text on green */
+    font-weight: 700;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+    transition: background-color 0.3s, transform 0.1s;
+    border: none;
+  }
+  .btn-primary:hover {
+    background: #059669;
+    transform: translateY(-1px);
+  }
+
+  /* Suggestions */
+  .suggestions-container {
+    position: relative;
+    width: 100%;
+    margin-top: 2px;
+  }
+  #suggestionsFrom, #suggestionsTo {
+    position: absolute;
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 0;
+    z-index: 20;
+    box-shadow: var(--shadow-strong);
+  }
+  #suggestionsFrom div, #suggestionsTo div {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #e5e7eb;
+    color: var(--text-color);
+  }
+  #suggestionsFrom div:hover, #suggestionsTo div:hover {
+    background: #f3f4f6;
+    color: var(--accent-color);
+  }
+
+  /* Route Visuals */
+  .route-segment {
+    margin-bottom: 20px;
+    padding-left: 20px;
+    border-left: 4px solid #d1d5db; /* Light gray line default */
+    position: relative;
+  }
+  .segment-header {
+    font-weight: 700;
+    margin-bottom: 5px;
+    padding: 4px 0;
+    display: block;
+    line-height: 1.3;
+  }
+  .station-name {
+    padding: 4px 0;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    color: var(--label-color);
+    position: relative;
+  }
+  .station-name span.marker {
+      margin-right: 8px;
+      font-size: 14px;
+      font-weight: 900;
+  }
+  .station-name.is-start {
+    color: var(--text-color); 
+    font-weight: 700;
+  }
+  .station-name.is-end {
+    color: var(--text-color); 
+    font-weight: 700;
+  }
+  .station-name.is-transfer {
+    color: var(--text-color); 
+    font-weight: 600;
+  }
+  .station-name.is-start span.marker {
+    color: #10b981; /* Start Marker: Green */
+  }
+  .station-name.is-end span.marker {
+    color: #ef4444; /* End Marker: Red */
+  }
+
+  .interchange-badge {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--warning-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  .summary-stat {
+    font-weight: 700;
+    color: var(--accent-color);
+  }
+  .summary-stat.changes {
+    color: var(--warning-color);
+  }
+
+  /* Tab Styling */
+  .tab {
+      padding: 12px 20px;
+      cursor: pointer;
+      font-weight: 600;
+      border-radius: 8px 8px 0 0;
+      transition: background-color 0.2s, color 0.2s;
+      border: 1px solid #e5e7eb;
+      border-bottom: none;
+      color: var(--label-color);
+      background-color: #f9fafb;
+      margin-right: 4px;
+  }
+  .tab.active {
+      background-color: var(--card-bg);
+      color: var(--text-color);
+      border-color: #d1d5db;
+      border-bottom: 1px solid var(--card-bg); /* Hide bottom border on active tab */
+  }
+
+  /* Custom Line Colors */
+  .line-red { border-left-color: #ee2c39; } .text-red { color: #ee2c39; }
+  .line-yellow { border-left-color: #f7d54b; } .text-yellow { color: #f7d54b; }
+  .line-blue { border-left-color: #0077c9; } .text-blue { color: #0077c9; }
+  .line-green { border-left-color: #00994f; } .text-green { color: #00994f; }
+  .line-violet { border-left-color: #7b2c90; } .text-violet { color: #7b2c90; }
+  .line-pink { border-left-color: #e567a1; } .text-pink { color: #e567a1; }
+  .line-magenta { border-left-color: #9f187a; } .text-magenta { color: #9f187a; }
+  .line-grey { border-left-color: #70777e; } .text-grey { color: #70777e; }
+  .line-airport-express { border-left-color: #f48024; } .text-airport-express { color: #f48024; }
+  .line-aqua { border-left-color: #00bcd4; } .text-aqua { color: #00bcd4; }
+  .line-rapid { border-left-color: #c95100; } .text-rapid { color: #c95100; }
+</style>
+</head>
+<body class="p-4">
+
+<h1 class="text-3xl font-extrabold mb-8 text-center" style="color:var(--accent-color);">
+    Metro Route Optimizer
+</h1>
+
+<div class="w-full max-w-2xl mx-auto route-card p-6 mb-8">
+    <!-- Input Fields -->
+    <div class="flex flex-col sm:flex-row gap-4 mb-4">
+        <div class="flex-1 relative">
+            <label for="fromStation" class="text-sm font-medium mb-1 block" style="color:var(--label-color);">Start:</label>
+            <input type="text" id="fromStation" placeholder="Starting Station Name" class="w-full p-3 rounded-md" oninput="handleInput(this.value, 'from')" autocomplete="off">
+            <div class="suggestions-container">
+              <div id="suggestionsFrom"></div>
+            </div>
+        </div>
+
+        <div class="flex-1 relative">
+            <label for="toStation" class="text-sm font-medium mb-1 block" style="color:var(--label-color);">End:</label>
+            <input type="text" id="toStation" placeholder="Destination Station Name" class="w-full p-3 rounded-md" oninput="handleInput(this.value, 'to')" autocomplete="off">
+            <div class="suggestions-container">
+              <div id="suggestionsTo"></div>
+            </div>
+        </div>
+    </div>
+
+    <button onclick="findDualRoutes()" class="btn-primary w-full py-3 rounded-lg text-lg mt-3">
+        Find Both Routes
+    </button>
+</div>
+
+<!-- Route Output Area -->
+<div id="routeOutput" class="w-full max-w-2xl mx-auto hidden">
+    
+    <!-- Tab Navigation -->
+    <div class="flex justify-start border-b border-[#d1d5db]">
+        <div class="tab active" data-tab="distance" onclick="switchTab('distance')">
+            Min. Stops (Fastest)
+        </div>
+        <div class="tab" data-tab="changes" onclick="switchTab('changes')">
+            Min. Changes (Easiest)
+        </div>
+    </div>
+
+    <!-- Tab Content Container -->
+    <div class="route-card p-6 rounded-t-none">
+        <!-- Tab 1: Minimum Distance -->
+        <div id="routeCardMinDistance" data-tab-content="distance" class="tab-content">
+            <h2 class="text-xl font-bold mb-4" style="color:var(--accent-color);">Fastest Route: Minimum Stops</h2>
+            <p class="text-label-color mb-4 text-sm">This route minimizes the total number of stations traveled. It is generally the quickest but may require more line transfers.</p>
+            <div id="route-details-distance"></div>
+            <div id="summary-distance" class="pt-4 mt-4 text-base border-t border-[#e5e7eb] text-center text-label-color"></div>
+        </div>
+
+        <!-- Tab 2: Minimum Changes -->
+        <div id="routeCardMinChanges" data-tab-content="changes" class="tab-content hidden">
+            <h2 class="text-xl font-bold mb-4" style="color:var(--warning-color);">Easiest Route: Minimum Changes</h2>
+            <p class="text-label-color mb-4 text-sm">This route minimizes the number of times you switch metro lines. It's often more relaxed, but the total number of stations traveled may be higher.</p>
+            <div id="route-details-changes"></div>
+            <div id="summary-changes" class="pt-4 mt-4 text-base border-t border-[#e5e7eb] text-center text-label-color"></div>
+        </div>
+    </div>
+</div>
+
+<div id="initialMessage" class="w-full max-w-2xl mx-auto route-card p-8 text-center mt-6">
+    <p class="text-xl font-medium text-label-color">Enter your start and end stations above to calculate two optimized routes.</p>
+</div>
+
+<script>
+    // --- 1. COMPREHENSIVE METRO NETWORK DATA ---
+    const NETWORK_DATA = {
+        'Red Line': ['line-red', [
+            "Shaheed Sthal (New Bus Adda)", "Hindon River", "Arthala", "Mohan Nagar", "Shyam Park", "Major Mohit Sharma", "Raj Bagh", "Shaheed Nagar", "Dilshad Garden", "Jhil Mil", "Mansarovar Park", "Shahdara", "Welcome", "Seelampur", "Shastri Park", "Kashmere Gate", "Tis Hazari", "Pul Bangash", "Pratap Nagar", "Shastri Nagar", "Inderlok", "Kanhaiya Nagar", "Keshav Puram", "Netaji Subash Place", "Kohat Enclave", "Pitam Pura", "Rohini East", "Rohini West", "Rithala"
+        ]],
+        'Yellow Line': ['line-yellow', [
+            "Samaypur Badli", "Rohini Sector 18-19", "Haiderpur Badli Mor", "Jahangirpuri", "Adarsh Nagar", "Azadpur", "Model Town", "Guru Tegh Bahadur Nagar", "Vishwavidyalaya", "Vidhan Sabha", "Civil Lines", "Kashmere Gate", "Chandni Chowk", "Chawri Bazar", "New Delhi", "Rajiv Chowk", "Patel Chowk", "Central Secretariat", "Udyog Bhawan", "Lok Kalyan Marg", "Jorbagh", "Dilli Haat INA", "AIIMS", "Green Park", "Hauz Khas", "Malviya Nagar", "Saket", "Qutab Minar", "Chhattarpur", "Sultanpur", "Ghitorni", "Arjan Garh", "Guru Dronacharya", "Sikandarpur", "MG Road", "IFFCO Chowk", "Huda City Centre"
+        ]],
+        'Blue Line 1': ['line-blue', [
+            "Dwarka Sector 21", "Dwarka Sector 8", "Dwarka Sector 9", "Dwarka Sector 10", "Dwarka Sector 11", "Dwarka Sector 12", "Dwarka Sector 13", "Dwarka Sector 14", "Dwarka", "Dwarka Mor", "Nawada", "Uttam Nagar West", "Uttam Nagar East", "Janak Puri West", "Janak Puri East", "Tilak Nagar", "Subhash Nagar", "Tagore Garden", "Rajouri Garden", "Ramesh Nagar", "Moti Nagar", "Kirti Nagar", "Shadipur", "Patel Nagar", "Rajendra Place", "Karol Bagh", "Jhandewalan", "R K Ashram Marg", "Rajiv Chowk", "Barakhamba", "Mandi House", "Supreme Court (Pragati Maidan)", "Indraprastha", "Yamuna Bank", "Akshardham", "Mayur Vihar Phase-1", "Mayur Vihar Extention", "New Ashok Nagar", "Noida Sector 15", "Noida Sector 16", "Noida Sector 18", "Botanical Garden", "Golf Course", "Noida City Center", "Noida Sector 34", "Noida Sector 52", "Noida Sector 61", "Noida Sector 59", "Noida Sector 62", "Noida Electronic City"
+        ]],
+        'Blue Line 2': ['line-blue', [
+            "Yamuna Bank", "Laxmi Nagar", "Nirman Vihar", "Preet Vihar", "Karkar Duma", "Anand Vihar", "Kaushambi", "Vaishali"
+        ]],
+        'Green Line Main': ['line-green', [
+            "Inderlok", "Ashok Park Main", "Punjabi Bagh", "Shivaji Park", "Madipur", "Paschim Vihar (East)", "Paschim Vihar (West)", "Peera Garhi", "Udyog Nagar", "Maharaja Surajmal Stadium", "Nangloi", "Nangloi Railway Station", "Rajdhani Park", "Mundka", "Mundka Industrial Area (MIA)", "Ghevra Metro Station", "Tikri Kalan", "Tikri Border", "Pandit Shree Ram Sharma", "Bahdurgarh City", "Brigadier Hoshiar Singh"
+        ]],
+        'Green Line Branch': ['line-green', [
+            "Ashok Park Main", "Satguru Ram Singh Marg", "Kirti Nagar"
+        ]],
+        'Violet Line': ['line-violet', [
+            "Kashmere Gate", "Lal Quila", "Jama Masjid", "Delhi Gate", "ITO", "Mandi House", "Janpath", "Central Secretariat", "Khan Market", "Jawaharlal Nehru Stadium", "Jangpura", "Lajpat Nagar", "Moolchand", "Kailash Colony", "Nehru Place", "Kalkaji Mandir", "Govind Puri", "Okhla", "Jasola", "Sarita Vihar", "Mohan Estate", "Tughlakabad", "Badarpur Border", "Sarai", "N.H.P.C. Chowk", "Mewala Maharajpur", "Sector 28 Faridabad", "Badkal Mor", "Old Faridabad", "Neelam Chowk Ajronda", "Bata Chowk", "Escorts Mujesar", "Sant Surdas - Sihi", "Raja Nahar Singh"
+        ]],
+        'Pink Line': ['line-pink', [
+            "Majlis Park", "Azadpur", "Shalimar Bagh", "Netaji Subash Place", "Shakurpur", "Punjabi Bagh West", "ESI Basai Darapur", "Rajouri Garden", "Maya Puri", "Naraina Vihar", "Delhi Cantt", "Durgabai Deshmukh South Campus", "Sir Vishweshwaraiah Moti Bagh", "Bhikaji Cama Place", "Sarojini Nagar", "Dilli Haat INA", "South Extension", "Lajpat Nagar", "Vinobapuri", "Ashram", "Sarai Kale Khan Hazrat Nizamuddin", "Mayur Vihar Phase-1", "Mayur Vihar Pocket I", "Trilokpuri Sanjay Lake", "Vinod Nagar East", "Mandawali - West Vinod Nagar", "IP Extension", "Anand Vihar", "Karkar Duma", "Karkarduma Court", "Krishna Nagar", "East Azad Nagar", "Welcome", "Jaffrabad", "Maujpur", "Gokulpuri", "Johri Enclave", "Shiv Vihar"
+        ]],
+        'Magenta Line': ['line-magenta', [
+            "Janak Puri West", "Dabri Mor - Janakpuri South", "Dashrath Puri", "Palam", "Sadar Bazaar Cantonment", "Terminal 1 IGI Airport", "Shankar Vihar", "Vasant Vihar", "Munirka", "RK Puram", "IIT Delhi", "Hauz Khas", "Panchsheel Park", "Chirag Delhi", "Greater Kailash", "Nehru Enclave", "Kalkaji Mandir", "Okhla NSIC", "Sukhdev Vihar", "Jamia Millia Islamia", "Okhla Vihar", "Jasola Vihar Shaheen Bagh", "Kalindi Kunj", "Okhla Bird Sanctuary", "Botanical Garden"
+        ]],
+        'Aqua Line': ['line-aqua', [
+            "Noida Sector 51", "Noida Sector 50", "Noida Sector 76", "Noida Sector 101", "Noida Sector 81", "NSEZ Noida", "Noida Sector 83", "Noida Sector 137", "Noida Sector 142", "Noida Sector 143", "Noida Sector 144", "Noida Sector 145", "Noida Sector 146", "Noida Sector 147", "Noida Sector 148", "Knowledge Park II", "Pari Chowk Greater Noida", "Alpha 1 Greater Noida", "Delta 1 Greater Noida", "GNIDA Office", "Depot Greater Noida"
+        ]],
+        'Airport Express Line': ['line-airport-express', [
+            "New Delhi-Airport Express", "Shivaji Stadium", "Dhaula Kuan", "Delhi Aerocity", "IGI Airport", "Dwarka Sector 21"
+        ]],
+        'Rapid Metro': ['line-rapid', [
+            "Sector 55-66 (Rapid Metro)", "Sector 54 Chowk (Rapid Metro)", "Sector 53-54 (Rapid Metro)", "Sector 42-43 (Rapid Metro)", "DLF Phase 1 (Rapid Metro)", "Sikandarpur (Rapid Metro)", "DLF Phase 2 (Rapid Metro)", "Belvedere Towers (Rapid Metro)", "Cyber City (Rapid Metro)", "Moulsari Avenue (Rapid Metro)", "DLF Phase 3 (Rapid Metro)"
+        ]],
+        'Gray Line': ['line-grey', [
+            "Dwarka", "Nangli", "Najafgarh"
+        ]],
+    };
+    
+    // --- 2. PRE-PROCESS NETWORK DATA ---
+    const stationToLines = {};
+    const stationNamesList = [];
+
+    function processNetworkData() {
+        for (const lineName in NETWORK_DATA) {
+            const stations = NETWORK_DATA[lineName][1];
+            for (const station of stations) {
+                const stationKey = station.trim(); 
+                
+                if (!stationToLines[stationKey]) {
+                    stationToLines[stationKey] = [];
+                }
+                if (!stationToLines[stationKey].includes(lineName)) {
+                    stationToLines[stationKey].push(lineName);
+                }
+                
+                if (!stationNamesList.includes(stationKey)) {
+                    stationNamesList.push(stationKey);
+                }
+            }
+        }
+        stationNamesList.sort();
+    }
+    processNetworkData();
+
+    // --- 3. HELPER FUNCTIONS ---
+    function getLineColorClass(lineName) {
+        return NETWORK_DATA[lineName] ? NETWORK_DATA[lineName][0] : 'line-default';
+    }
+    
+    function switchTab(tabName) {
+        const tabs = document.querySelectorAll('.tab');
+        const contents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.getAttribute('data-tab') === tabName) {
+                tab.classList.add('active');
+            }
+        });
+
+        contents.forEach(content => {
+            content.classList.add('hidden');
+            if (content.getAttribute('data-tab-content') === tabName) {
+                content.classList.remove('hidden');
+            }
+        });
+    }
+
+    // --- 4. INPUT & SUGGESTION HANDLERS ---
+
+    function handleInput(value, type) {
+        const input = value.toLowerCase();
+        const divId = type === 'from' ? 'suggestionsFrom' : 'suggestionsTo';
+        const inputId = type === 'from' ? 'fromStation' : 'toStation';
+        const div = document.getElementById(divId);
+        const inputField = document.getElementById(inputId);
+        
+        div.innerHTML = '';
+        if (input.length < 2) return;
+
+        const filteredSuggestions = stationNamesList
+            .filter(name => name.toLowerCase().includes(input))
+            .slice(0, 8);
+
+        filteredSuggestions.forEach(name => {
+            const item = document.createElement('div');
+            item.textContent = name;
+            item.onclick = () => {
+                inputField.value = name;
+                div.innerHTML = ''; 
+            };
+            div.appendChild(item);
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('input') && !event.target.closest('#suggestionsFrom') && !event.target.closest('#suggestionsTo')) {
+            document.getElementById('suggestionsFrom').innerHTML = '';
+            document.getElementById('suggestionsTo').innerHTML = '';
+        }
+    });
+
+    // --- 5. CORE ROUTE FINDING (Dijkstra's with configurable cost) ---
+    function findShortestRoute(startStation, endStation, interchangeCost) {
+        const start = startStation.trim();
+        const end = endStation.trim();
+
+        if (!stationToLines[start] || !stationToLines[end]) return [];
+
+        const priorityQueue = []; // Stores {station, line, cost, path}
+        const minCostToState = new Map(); // Key: "StationName|LineName"
+
+        const TRAVEL_COST = 1; 
+
+        // 1. Initialization
+        stationToLines[start].forEach(line => {
+            const stateKey = `${start}|${line}`;
+            minCostToState.set(stateKey, 0);
+            priorityQueue.push({
+                station: start,
+                line: line,
+                cost: 0,
+                path: [{ station: start, line: line, type: 'start' }],
+            });
+        });
+
+        while (priorityQueue.length > 0) {
+            // Sort to simulate Priority Queue (find state with lowest cost)
+            priorityQueue.sort((a, b) => a.cost - b.cost); 
+            const current = priorityQueue.shift();
+
+            const { station: currentStation, line: currentLine, cost: currentCost, path } = current;
+            const currentStateKey = `${currentStation}|${currentLine}`;
+            
+            if (currentCost > minCostToState.get(currentStateKey)) {
+                continue;
+            }
+
+            if (currentStation === end) {
+                return path; 
+            }
+
+            // 2. Travel on Current Line (Forward/Backward)
+            const stationsOnCurrentLine = NETWORK_DATA[currentLine][1];
+            const currentLineIndex = stationsOnCurrentLine.findIndex(s => s === currentStation);
+            
+            [currentLineIndex - 1, currentLineIndex + 1].forEach(nextIndex => {
+                if (nextIndex >= 0 && nextIndex < stationsOnCurrentLine.length) {
+                    const nextStation = stationsOnCurrentLine[nextIndex];
+                    const nextCost = currentCost + TRAVEL_COST;
+                    const nextStateKey = `${nextStation}|${currentLine}`;
+
+                    if (!minCostToState.has(nextStateKey) || nextCost < minCostToState.get(nextStateKey)) {
+                        minCostToState.set(nextStateKey, nextCost);
+                        priorityQueue.push({
+                            station: nextStation,
+                            line: currentLine,
+                            cost: nextCost,
+                            path: [...path, { station: nextStation, line: currentLine, type: 'travel' }],
+                        });
+                    }
+                }
+            });
+
+            // 3. Interchange at current station
+            if (stationToLines[currentStation] && stationToLines[currentStation].length > 1) {
+                stationToLines[currentStation].forEach(newLine => {
+                    if (newLine !== currentLine) {
+                        const nextCost = currentCost + interchangeCost; // Use dynamic cost
+                        const nextStateKey = `${currentStation}|${newLine}`;
+                        
+                        if (!minCostToState.has(nextStateKey) || nextCost < minCostToState.get(nextStateKey)) {
+                            minCostToState.set(nextStateKey, nextCost);
+                            priorityQueue.push({
+                                station: currentStation,
+                                line: newLine,
+                                cost: nextCost,
+                                path: [...path, { 
+                                    station: currentStation, 
+                                    line: newLine, 
+                                    type: 'interchange'
+                                }],
+                            });
+                        }
+                    }
+                });
+            }
+        }
+        return []; // Route not found
+    }
+
+    // --- 6. DISPLAY ROUTE FUNCTIONS ---
+
+    function renderSegment(lineName, segmentStations, isInterchange, containerId, isFinalStop) {
+        const lineClass = getLineColorClass(lineName);
+        const stopsCount = segmentStations.length - 1; 
+        const isStartStation = segmentStations[0] === document.getElementById('fromStation').value.trim();
+        
+        const segmentDiv = document.createElement('div');
+        segmentDiv.className = `route-segment ${lineClass}`;
+
+        let html = `
+            <span class="segment-header text-base ${lineClass.replace('line-', 'text-')}">
+                <span class="font-black">${lineName} Line:</span> Travel for ${stopsCount} stop${stopsCount !== 1 ? 's' : ''}
+                
+            </span>
+        `;
+        
+        segmentStations.forEach((station, index) => {
+            let marker = '\u2022'; // Default bullet
+            let extraClass = '';
+            let badge = '';
+
+            if (index === 0) {
+                // First station of segment
+                marker = isStartStation ? '\u2794' : '\u270a'; // Start: Arrow / Transfer: Fist/Hand
+                extraClass = isStartStation ? 'is-start' : 'is-transfer';
+                
+                if (isInterchange && stopsCount > 0) {
+                    badge = `<span class="interchange-badge">TRANSFER HERE</span>`;
+                }
+            } else if (index === segmentStations.length - 1) {
+                // Last station of segment
+                marker = isFinalStop ? '\u2714' : '\u2794'; // Final: Checkmark / Next Transfer: Arrow
+                extraClass = isFinalStop ? 'is-end' : 'is-transfer';
+            }
+            
+            html += `
+                <span class="station-name ${extraClass}">
+                    <span class="marker">${marker}</span> ${station}
+                    ${badge}
+                </span>`;
+        });
+       
+        segmentDiv.innerHTML = html;
+        document.getElementById(containerId).appendChild(segmentDiv);
+    }
+
+    function displayRoute(route, containerId, summaryId) {
+        const details = document.getElementById(containerId);
+        const summary = document.getElementById(summaryId);
+        details.innerHTML = '';
+        summary.innerHTML = '';
+
+        if (route.length === 0) {
+            details.innerHTML = `<p class="text-warning-color text-center py-4">No route found between these stations.</p>`;
+            return;
+        }
+
+        const finalSegments = [];
+        let currentStations = [route[0].station];
+        let currentLine = route[0].line;
+        let totalStops = 0;
+        let interchangeCount = 0;
+        let isTransferIn = false;
+
+        for (let i = 1; i < route.length; i++) {
+            const step = route[i];
+            
+            if (step.type === 'interchange') {
+                // End the current segment at the interchange station
+                finalSegments.push({
+                    line: currentLine,
+                    stations: currentStations,
+                    isInterchange: isTransferIn,
+                    isFinalStop: false
+                });
+
+                // Prepare for next segment starting at the transfer station
+                currentLine = step.line;
+                currentStations = [step.station]; 
+                isTransferIn = true;
+                interchangeCount++;
+            } else if (step.type === 'travel' && step.line === currentLine) {
+                // Normal travel on the same line
+                currentStations.push(step.station);
+                totalStops++;
+                isTransferIn = false;
+            }
+        }
+
+        // Push the FINAL segment
+        if (currentStations.length > 0) {
+            finalSegments.push({
+                line: currentLine,
+                stations: currentStations,
+                isInterchange: isTransferIn,
+                isFinalStop: true
+            });
+        }
+
+        finalSegments.forEach(segment => renderSegment(segment.line, segment.stations, segment.isInterchange, containerId, segment.isFinalStop));
+
+        summary.innerHTML = `
+            <div class="flex justify-center space-x-6 text-lg font-medium">
+                <span class="text-gray-700">STOPS: <span class="summary-stat">${totalStops}</span></span>
+                <span class="text-gray-700">CHANGES: <span class="summary-stat changes">${interchangeCount}</span></span>
+            </div>
+        `;
+    }
+
+    // --- 7. MAIN DUAL ROUTE FUNCTION CALL ---
+
+    function findDualRoutes() {
+        const fromInput = document.getElementById('fromStation').value;
+        const toInput = document.getElementById('toStation').value;
+        const initialMessage = document.getElementById('initialMessage');
+        const routeOutput = document.getElementById('routeOutput');
+
+        
+        document.getElementById('suggestionsFrom').innerHTML = '';
+        document.getElementById('suggestionsTo').innerHTML = '';
+
+        routeOutput.classList.add('hidden');
+        initialMessage.classList.remove('hidden');
+
+        if (!fromInput || !toInput) { 
+            initialMessage.innerHTML = '<p class="text-warning-color text-xl font-medium">Please enter both a start and end station.</p>';
+            return; 
+        }
+        
+        if (!stationToLines[fromInput.trim()] || !stationToLines[toInput.trim()]) {
+            initialMessage.innerHTML = `<p class="text-warning-color text-xl font-medium">One or both stations were not found in the network. Please check spelling.</p>`;
+            return; 
+        }
+
+        initialMessage.innerHTML = `<p class="text-xl font-medium" style="color:var(--accent-color);">Calculating routes, please wait...</p>`;
+
+
+        // --- DUAL ROUTE CALCULATIONS ---
+        
+        // Route 1: Minimum Distance (Interchange cost = 5, worth 5 stops)
+        const routeMinDistance = findShortestRoute(fromInput, toInput, 5);
+        
+        // Route 2: Minimum Changes (Interchange cost = 100, worth 100 stops)
+        const routeMinChanges = findShortestRoute(fromInput, toInput, 100);
+
+        // --- DISPLAY RESULTS ---
+
+        initialMessage.classList.add('hidden');
+        routeOutput.classList.remove('hidden');
+        
+        // Display Route 1 (Min Stops)
+        displayRoute(routeMinDistance, 'route-details-distance', 'summary-distance');
+        
+        // Display Route 2 (Min Changes)
+        displayRoute(routeMinChanges, 'route-details-changes', 'summary-changes');
+        
+        // Default to showing the fastest tab
+        switchTab('distance');
+
+        // Check if both routes are identical (e.g., direct line) and notify
+        if (JSON.stringify(routeMinDistance) === JSON.stringify(routeMinChanges) && routeMinDistance.length > 0) {
+             document.getElementById('routeCardMinChanges').querySelector('h2').textContent = "Easiest Route: Minimum Changes (Same as Fastest)";
+             document.getElementById('routeCardMinChanges').querySelector('p').textContent = "This route is identical to the fastest one, meaning it's the optimal choice for both speed and convenience.";
+        }
+    }
+</script>
+
+</body>
+</html>
